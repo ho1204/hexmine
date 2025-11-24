@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>육각형 지뢰찾기 (지뢰 80개, 25%)</title>
+    <title>육각형 지뢰찾기 (18x14, 지뢰 55개)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -18,10 +18,9 @@
             display: flex;
             justify-content: center;
             align-items: flex-start; 
-            /* 화면 높이를 거의 완전히 사용 */
             min-height: 100vh; 
             margin: 0;
-            padding: 0; /* body의 기본 패딩 제거 */
+            padding: 0; 
             box-sizing: border-box;
             width: 100vw;
         }
@@ -31,11 +30,10 @@
             flex-direction: column;
             align-items: center;
             background-color: #2d3748;
-            border-radius: 0; /* 모바일에서 화면 끝까지 사용하기 위해 테두리 제거 */
+            border-radius: 0; 
             box-shadow: none; 
             padding: 1rem;
             width: 100%; 
-            /* 화면 높이를 가득 채우되, 브라우저 UI를 고려해 약간의 여백 확보 */
             height: 100vh; 
             max-width: 500px; /* 세로 화면 최대 너비 제한 */
             overflow: hidden; 
@@ -79,10 +77,9 @@
             border-radius: 0.5rem;
             touch-action: none; 
             cursor: pointer;
-            /* 캔버스가 부모 영역(game-area)을 최대한 채우도록 설정 */
             max-width: 100%;
             max-height: 100%;
-            display: block; /* 인라인 요소 공백 제거 */
+            display: block; 
         }
 
         .btn-action {
@@ -125,10 +122,10 @@
 </head>
 <body>
     <div id="game-container">
-        <h1 class="text-2xl font-bold mb-3 text-white">Hex 지뢰찾기 (지뢰 80개)</h1>
+        <h1 class="text-2xl font-bold mb-3 text-white">Hex 지뢰찾기 (18x14)</h1>
         
         <div id="controls">
-            <div id="message-box" class="mono-font">지뢰 80개</div>
+            <div id="message-box" class="mono-font">지뢰 55개</div>
             <button id="flag-toggle" class="flag-toggle-btn">
                 🚩 일반 모드
             </button>
@@ -155,13 +152,13 @@
             const messageBox = document.getElementById('message-box');
             const flagToggleButton = document.getElementById('flag-toggle');
             const gameArea = document.getElementById('game-area');
-            const gameContainer = document.getElementById('game-container');
             
-            // --- 게임 설정 (20x16, 80 지뢰 (25%)) ---
-            const ROWS = 20; // 세로 20칸
-            const COLS = 16; // 가로 16칸
-            const MINE_COUNT = 80; // 전체 320셀의 25%
-            const MARGIN = 4; // 캔버스 주변 여백을 최소화
+            // --- 게임 설정 (18x14, 55 지뢰 (22%)) ---
+            const ROWS = 18; // 세로 18칸
+            const COLS = 14; // 가로 14칸
+            const TOTAL_CELLS = ROWS * COLS; // 252
+            const MINE_COUNT = Math.floor(TOTAL_CELLS * 0.22); // 55
+            const MARGIN = 4; 
             
             // --- 동적 크기 변수 ---
             let HEX_SIZE = 20; 
@@ -271,8 +268,10 @@
                 ];
 
                 if (isOddRow) {
+                    // 홀수 행은 오른쪽 위/아래 추가
                     offsets.push([-1, 1], [1, 1]); 
                 } else {
+                    // 짝수 행은 왼쪽 위/아래 추가
                     offsets.push([-1, -1], [1, -1]); 
                 }
 
@@ -343,7 +342,6 @@
                         if (!board[r][c].isMine) {
                             let count = 0;
                             getNeighbors(r, c).forEach(([nr, nc]) => {
-                                // 배열 범위 체크는 getNeighbors에서 하지만, 안전을 위해 옵셔널 체이닝 사용
                                 if (board[nr]?.[nc]?.isMine) {
                                     count++;
                                 }
@@ -354,6 +352,7 @@
                 }
             };
             
+            // 핵심: 셀을 열고, 0이면 주변을 자동 전파
             const revealCell = (r, c) => {
                 if (r < 0 || r >= ROWS || c < 0 || c >= COLS || board[r][c].isRevealed || board[r][c].isFlagged) {
                     return;
@@ -368,8 +367,9 @@
                 }
 
                 if (cell.mineCount === 0) {
-                    // 주변 셀 자동 열기
+                    // 주변 셀 자동 열기 (전파)
                     getNeighbors(r, c).forEach(([nr, nc]) => {
+                        // 깃발이 꽂히지 않은, 아직 열리지 않은 셀만 전파
                         if (board[nr] && board[nr][nc] && !board[nr][nc].isRevealed && !board[nr][nc].isFlagged) {
                             revealCell(nr, nc); // 재귀 호출
                         }
@@ -395,19 +395,17 @@
             };
 
             const checkWin = () => {
-                let unrevealedCount = 0;
+                let nonMineUnrevealedCount = 0;
                 
                 board.forEach(row => {
                     row.forEach(cell => {
-                        // 지뢰가 아닌데 열리지 않은 셀의 수를 세는 것이 더 정확합니다.
                         if (!cell.isMine && !cell.isRevealed) {
-                            unrevealedCount++;
+                            nonMineUnrevealedCount++;
                         }
                     });
                 });
 
-                // 지뢰가 아닌 모든 셀이 열렸다면 승리입니다.
-                if (unrevealedCount === 0 && !isGameOver) {
+                if (nonMineUnrevealedCount === 0 && !isGameOver) {
                      gameOver(true);
                 }
             };
@@ -418,14 +416,12 @@
                 if (isWin) {
                     messageBox.textContent = "🥳 승리! 다시 하시겠어요?";
                     messageBox.style.backgroundColor = '#48bb78'; 
-                    // 승리 시 모든 지뢰에 깃발 표시
                     board.forEach(row => row.forEach(cell => {
                         if (cell.isMine) cell.isFlagged = true;
                     }));
                 } else {
                     messageBox.textContent = "💥 게임 오버! 지뢰 폭발!";
                     messageBox.style.backgroundColor = '#e53e3e'; 
-                    // 패배 시 모든 지뢰 공개
                     board.forEach(row => row.forEach(cell => {
                         if (cell.isMine) cell.isRevealed = true;
                     }));
@@ -435,11 +431,38 @@
 
             const updateMessage = () => {
                 if (!isGameOver) {
+                    // 깃발 모드 메시지 변경 요청 반영 (남은 지뢰 갯수만 표시)
                     messageBox.textContent = `🚩 ${flagsRemaining}개 남음 (총 ${MINE_COUNT}개)`;
                     messageBox.style.backgroundColor = '#4a5568';
                 }
             };
 
+            // 3. 자동 열기 (Chording) 기능 구현
+            const autoRevealNeighbors = (r, c) => {
+                const cell = board[r][c];
+                if (!cell.isRevealed || cell.mineCount === 0) return;
+
+                let flaggedCount = 0;
+                const neighbors = getNeighbors(r, c);
+                
+                // 인접 셀 중 깃발 갯수 카운트
+                neighbors.forEach(([nr, nc]) => {
+                    if (board[nr][nc].isFlagged) {
+                        flaggedCount++;
+                    }
+                });
+
+                // 깃발 갯수가 셀의 지뢰 갯수와 일치하면 자동 열기 시작
+                if (flaggedCount === cell.mineCount) {
+                    neighbors.forEach(([nr, nc]) => {
+                        const neighborCell = board[nr][nc];
+                        // 깃발이 꽂히지 않았고, 아직 열리지 않은 셀만 revealCell 호출
+                        if (!neighborCell.isFlagged && !neighborCell.isRevealed) {
+                            revealCell(nr, nc); 
+                        }
+                    });
+                }
+            };
 
             // --- 렌더링 ---
 
@@ -464,7 +487,6 @@
 
             // 2. 보드 전체 그리기
             const drawBoard = () => {
-                // 캔버스 배경 채우기
                 ctx.fillStyle = COLORS.BACKGROUND;
                 ctx.fillRect(0, 0, canvas.width, canvas.height); 
 
@@ -504,11 +526,9 @@
                             ctx.textBaseline = 'middle';
                             
                             if (content.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/)) {
-                                // 이모지 폰트 크기 조정
                                 ctx.font = `bold ${HEX_SIZE * 0.9}px Noto Sans KR`;
                                 ctx.fillText(content, x, y + HEX_SIZE * 0.1); 
                             } else {
-                                // 숫자 폰트 크기 조정
                                 ctx.font = `bold ${HEX_SIZE * 1.1}px Roboto Mono`;
                                 ctx.fillText(content, x, y + HEX_SIZE * 0.1); 
                             }
@@ -520,7 +540,6 @@
             // --- 이벤트 핸들러 ---
 
             const handleCanvasClick = (event) => {
-                // 오른쪽 클릭 방지 (PC)
                 if (event.type === 'contextmenu') {
                     event.preventDefault();
                     return;
@@ -528,7 +547,6 @@
                 
                 if (isGameOver) return;
 
-                // 캔버스 좌표 계산
                 const rect = canvas.getBoundingClientRect();
                 const scaleX = canvas.width / rect.width;
                 const scaleY = canvas.height / rect.height; 
@@ -539,38 +557,39 @@
                 if (!hex) return;
                 
                 const { row, col } = hex;
+                const cell = board[row][col]; // 클릭한 셀 참조
 
-                // 첫 클릭 시 지뢰 배치
                 if (isFirstClick) {
                     placeMines(row, col);
                     isFirstClick = false;
                 }
 
-                // 깃발 모드 또는 마우스 오른쪽 버튼 클릭
                 const isFlagAction = (event.button === 2) || isFlagMode;
                 
                 if (isFlagAction) {
                     toggleFlag(row, col);
                 } else {
-                    if (board[row][col].isFlagged) {
-                        return; // 깃발이 꽂힌 셀은 열지 않음
+                    if (cell.isFlagged) {
+                        return;
                     }
-                    revealCell(row, col);
+                    
+                    // 3. Chording (자동 열기) 기능 실행
+                    if (cell.isRevealed && cell.mineCount > 0) {
+                        autoRevealNeighbors(row, col);
+                    } else {
+                        revealCell(row, col);
+                    }
                 }
 
                 drawBoard();
             };
             
-            // 깃발 모드 토글 버튼
+            // 2. 깃발 모드 메시지 변경 요청 반영
             flagToggleButton.addEventListener('click', () => {
                 isFlagMode = !isFlagMode;
                 flagToggleButton.textContent = isFlagMode ? "❌ 깃발 모드 해제" : "🚩 일반 모드";
                 flagToggleButton.classList.toggle('active', isFlagMode);
-                if (isFlagMode) {
-                    messageBox.textContent = "깃발을 꽂을 셀을 터치하세요.";
-                } else {
-                    updateMessage();
-                }
+                updateMessage(); // 항상 남은 깃발 갯수를 표시
             });
 
             // 새 게임 버튼
@@ -588,7 +607,6 @@
             // 터치 이벤트 (모바일)
             canvas.addEventListener('touchstart', (e) => {
                 e.preventDefault(); 
-                // 터치 좌표를 이용해 클릭 이벤트 처리
                 handleCanvasClick({
                     clientX: e.touches[0].clientX,
                     clientY: e.touches[0].clientY,
@@ -619,7 +637,6 @@
                 const hexSizeFromHeight = availableHeight / boardHeightUnits;
                 
                 // 둘 중 작은 값을 선택하여 보드가 잘리지 않도록 함
-                // 소수점 셋째 자리에서 반올림하여 더 정밀하게 계산
                 const newHexSize = Math.floor(Math.min(hexSizeFromWidth, hexSizeFromHeight) * 100) / 100;
 
                 // 4. HEX_SIZE 업데이트 (최소 8px)
@@ -638,7 +655,6 @@
             // --- 시작 함수 ---
             const startGame = () => {
                 createBoard();
-                // 캔버스의 크기를 결정하기 위해 resizeCanvas 호출
                 resizeCanvas(); 
                 updateMessage();
             };
@@ -647,7 +663,6 @@
             window.addEventListener('resize', resizeCanvas);
             
             // gameArea의 크기가 결정된 후 resizeCanvas를 호출
-            // 100ms 지연을 주어 DOM 및 레이아웃 계산 시간을 확보 (모바일 환경 대응)
             window.onload = function() {
                 setTimeout(startGame, 100);
             }
