@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>육각형 지뢰찾기 (18x14, 지뢰 55개)</title>
+    <title>육각형 지뢰찾기 (칸 조절 가능)</title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     
     <style>
         /* 사용자 정의 CSS: 모바일 세로 화면에 최적화 및 화면 가득 채우기 */
-        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@700&family=Noto+Sans+KR:wght@400;700&display=swap');
         
         body {
             font-family: 'Noto Sans KR', sans-serif;
@@ -111,7 +111,7 @@
             border-radius: 0.5rem;
             font-weight: bold;
             transition: background-color 0.2s;
-            /* **수정:** 버튼의 너비를 가장 긴 텍스트("❌ 깃발 모드 해제")에 맞춰 고정 */
+            /* 버튼의 너비를 가장 긴 텍스트에 맞춰 고정 */
             flex: 0 0 170px;
             min-width: 170px;
             text-wrap: nowrap; 
@@ -126,7 +126,7 @@
 </head>
 <body>
     <div id="game-container">
-        <h1 class="text-2xl font-bold mb-3 text-white">Hex 지뢰찾기 (18x14)</h1>
+        <h1 class="text-2xl font-bold mb-3 text-white">Hex 지뢰찾기 (칸 조절 가능)</h1>
         
         <div id="controls">
             <div id="message-box" class="mono-font">지뢰 55개</div>
@@ -142,26 +142,64 @@
         <button id="reset-button" class="btn-action w-full mt-3">
             새 게임 시작
         </button>
+        <button id="adjust-button" class="btn-action w-full mt-2 bg-yellow-600 hover:bg-yellow-700">
+            칸 조절 하기
+        </button>
         
         <p class="text-xs text-gray-400 mt-2">
             **모바일:** 터치하여 열기/깃발 꽂기 (모드 전환).
         </p>
     </div>
 
+    <!-- Config Modal -->
+    <div id="config-modal" class="fixed inset-0 bg-black bg-opacity-75 hidden z-50 flex items-center justify-center p-4">
+        <div class="bg-gray-700 p-6 rounded-xl shadow-2xl w-full max-w-sm">
+            <h3 class="text-xl font-bold mb-4 text-white">게임 크기 조절</h3>
+            <p id="config-error" class="text-sm text-red-400 mb-3 hidden">유효한 값을 입력해주세요 (5~50).</p>
+            <p class="text-sm text-gray-300 mb-3">지뢰 갯수는 전체 칸의 22%로 자동 계산됩니다.</p>
+            <div class="space-y-4">
+                <div>
+                    <label for="input-rows" class="block text-sm font-medium text-gray-300">세로 칸 수 (Rows)</label>
+                    <input type="number" id="input-rows" min="5" max="50" value="18" 
+                           class="mt-1 block w-full rounded-lg border-gray-600 bg-gray-800 text-white p-2.5 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+                <div>
+                    <label for="input-cols" class="block text-sm font-medium text-gray-300">가로 칸 수 (Cols)</label>
+                    <input type="number" id="input-cols" min="5" max="50" value="14" 
+                           class="mt-1 block w-full rounded-lg border-gray-600 bg-gray-800 text-white p-2.5 focus:ring-blue-500 focus:border-blue-500">
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end space-x-3">
+                <button id="cancel-config" class="px-4 py-2 text-sm font-medium text-gray-300 bg-gray-600 rounded-lg hover:bg-gray-500">취소</button>
+                <button id="save-config" class="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700">적용하고 새 게임 시작</button>
+            </div>
+        </div>
+    </div>
+
+
     <script>
         document.addEventListener('DOMContentLoaded', () => {
             const canvas = document.getElementById('game-canvas');
             const ctx = canvas.getContext('2d');
             const resetButton = document.getElementById('reset-button');
+            const adjustButton = document.getElementById('adjust-button');
             const messageBox = document.getElementById('message-box');
             const flagToggleButton = document.getElementById('flag-toggle');
             const gameArea = document.getElementById('game-area');
             
-            // --- 게임 설정 (18x14, 55 지뢰 (22%)) ---
-            const ROWS = 18; // 세로 18칸
-            const COLS = 14; // 가로 14칸
-            const TOTAL_CELLS = ROWS * COLS; // 252
-            const MINE_COUNT = 55; // Math.floor(TOTAL_CELLS * 0.22); // 55
+            // --- Config Modal Elements ---
+            const configModal = document.getElementById('config-modal');
+            const inputRows = document.getElementById('input-rows');
+            const inputCols = document.getElementById('input-cols');
+            const cancelConfigButton = document.getElementById('cancel-config');
+            const saveConfigButton = document.getElementById('save-config');
+            const configError = document.getElementById('config-error');
+
+            // --- 게임 설정 (동적 변수) ---
+            let ROWS = 18; // 세로 18칸 (기본값)
+            let COLS = 14; // 가로 14칸 (기본값)
+            const MINE_PERCENTAGE = 0.22;
+            let MINE_COUNT = Math.max(1, Math.floor(ROWS * COLS * MINE_PERCENTAGE)); // 지뢰 갯수 (22%로 자동 계산)
             const MARGIN = 4; 
             
             // --- 동적 크기 변수 ---
@@ -190,7 +228,6 @@
 
             // --- 헬퍼 함수 ---
 
-            // 육각형 좌표 계산 (Pointy Top Hex: 30도 회전 시작)
             const getHexagonPoints = (center_x, center_y, size) => {
                 const points = [];
                 for (let i = 0; i < 6; i++) {
@@ -204,7 +241,6 @@
                 return points;
             };
 
-            // Grid (row, col)을 Pixel (x, y)로 변환
             const hexToPixel = (row, col) => {
                 const w = Math.sqrt(3) * HEX_SIZE; 
                 const h = 2 * HEX_SIZE; 
@@ -218,7 +254,6 @@
                 };
             };
             
-            // Pixel (x, y)를 Grid (row, col)로 변환
             const pixelToHex = (px, py) => {
                 px -= MARGIN;
                 py -= MARGIN;
@@ -261,7 +296,6 @@
                 return null;
             };
 
-            // 육각형 이웃 찾기 (Pointy Top, Row-Staggered Logic)
             const getNeighbors = (r, c) => {
                 const neighbors = [];
                 const isOddRow = r % 2 !== 0; 
@@ -289,16 +323,13 @@
                 return neighbors;
             };
 
-            // 캔버스 픽셀 크기 설정 (현재 HEX_SIZE 기반)
             const initializeCanvasDimensions = () => {
                 const w = Math.sqrt(3) * HEX_SIZE;
                 const h = 2 * HEX_SIZE;
                 
-                // 보드 픽셀 크기 계산
                 const max_x = w * COLS + w / 2;
                 const max_y = h * 0.75 * (ROWS - 1) + h;
                 
-                // 캔버스 크기 = 보드 크기 + 여백 * 2
                 canvas.width = max_x + MARGIN * 2;
                 canvas.height = max_y + MARGIN * 2;
             };
@@ -328,7 +359,6 @@
                     const r = Math.floor(Math.random() * ROWS);
                     const c = Math.floor(Math.random() * COLS);
 
-                    // 첫 클릭 셀과 그 주변 6칸에는 지뢰를 놓지 않습니다.
                     const isStartCell = r === startRow && c === startCol;
                     const isNeighbor = getNeighbors(startRow, startCol).some(([nr, nc]) => nr === r && nc === c);
 
@@ -356,7 +386,6 @@
                 }
             };
             
-            // 핵심: 셀을 열고, 0이면 주변을 자동 전파
             const revealCell = (r, c) => {
                 if (r < 0 || r >= ROWS || c < 0 || c >= COLS || board[r][c].isRevealed || board[r][c].isFlagged) {
                     return;
@@ -371,11 +400,9 @@
                 }
 
                 if (cell.mineCount === 0) {
-                    // 주변 셀 자동 열기 (전파)
                     getNeighbors(r, c).forEach(([nr, nc]) => {
-                        // 깃발이 꽂히지 않은, 아직 열리지 않은 셀만 전파
                         if (board[nr] && board[nr][nc] && !board[nr][nc].isRevealed && !board[nr][nc].isFlagged) {
-                            revealCell(nr, nc); // 재귀 호출
+                            revealCell(nr, nc); 
                         }
                     });
                 }
@@ -435,19 +462,18 @@
 
             const updateMessage = () => {
                 if (!isGameOver) {
-                    // 깃발 모드 메시지 변경 요청 반영 (남은 지뢰 갯수만 표시)
                     messageBox.textContent = `🚩 ${flagsRemaining}개 남음 (총 ${MINE_COUNT}개)`;
                     messageBox.style.backgroundColor = '#4a5568';
                 }
             };
 
-            // 3. 자동 열기 (Chording) 기능 구현
+            // 자동 열기 (Chording) 기능
             const autoRevealNeighbors = (r, c) => {
                 const cell = board[r][c];
                 if (!cell.isRevealed || cell.mineCount === 0) return;
 
                 let flaggedCount = 0;
-                let hasMineFlaggedIncorrectly = false; // 잘못 꽂은 깃발 체크용
+                let hasMineFlaggedIncorrectly = false; 
                 const neighbors = getNeighbors(r, c);
                 
                 // 인접 셀 중 깃발 갯수 카운트 및 잘못 꽂은 깃발 체크
@@ -461,33 +487,21 @@
                     }
                 });
 
-                // 깃발 갯수가 셀의 지뢰 갯수와 일치하면 자동 열기 시작
                 if (flaggedCount === cell.mineCount) {
-                    if (hasMineFlaggedIncorrectly) {
-                        // 만약 깃발이 잘못 꽂혔다면, 자동 열기 시 지뢰가 터짐
-                        neighbors.forEach(([nr, nc]) => {
-                             const neighborCell = board[nr][nc];
-                             if (!neighborCell.isFlagged && !neighborCell.isRevealed) {
-                                 // revealCell이 지뢰를 발견하면 game over를 호출함
-                                 revealCell(nr, nc); 
-                             }
-                        });
-                    } else {
-                        // 깃발이 모두 올바르다면 안전하게 열기
-                        neighbors.forEach(([nr, nc]) => {
-                            const neighborCell = board[nr][nc];
-                            // 깃발이 꽂히지 않았고, 아직 열리지 않은 셀만 revealCell 호출
-                            if (!neighborCell.isFlagged && !neighborCell.isRevealed) {
-                                revealCell(nr, nc); 
-                            }
-                        });
-                    }
+                    // 깃발 갯수와 지뢰 갯수가 일치할 때만 자동 열기 시도
+                    neighbors.forEach(([nr, nc]) => {
+                        const neighborCell = board[nr][nc];
+                        // 깃발이 꽂히지 않았고, 아직 열리지 않은 셀만 revealCell 호출
+                        if (!neighborCell.isFlagged && !neighborCell.isRevealed) {
+                            // 잘못 꽂은 깃발이 있다면 이 과정에서 지뢰가 터짐
+                            revealCell(nr, nc); 
+                        }
+                    });
                 }
             };
 
             // --- 렌더링 ---
 
-            // 1. 육각형 그리기 (경계선 포함)
             const drawHexagon = (center_x, center_y, size, fill_color, border_color) => {
                 const points = getHexagonPoints(center_x, center_y, size);
                 
@@ -506,7 +520,6 @@
                 ctx.stroke();
             };
 
-            // 2. 보드 전체 그리기
             const drawBoard = () => {
                 ctx.fillStyle = COLORS.BACKGROUND;
                 ctx.fillRect(0, 0, canvas.width, canvas.height); 
@@ -547,9 +560,11 @@
                             ctx.textBaseline = 'middle';
                             
                             if (content.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/)) {
+                                // 이모지 렌더링
                                 ctx.font = `bold ${HEX_SIZE * 0.9}px Noto Sans KR`;
                                 ctx.fillText(content, x, y + HEX_SIZE * 0.1); 
                             } else {
+                                // 숫자 렌더링
                                 ctx.font = `bold ${HEX_SIZE * 1.1}px Roboto Mono`;
                                 ctx.fillText(content, x, y + HEX_SIZE * 0.1); 
                             }
@@ -578,28 +593,31 @@
                 if (!hex) return;
                 
                 const { row, col } = hex;
-                const cell = board[row][col]; // 클릭한 셀 참조
+                const cell = board[row][col]; 
 
                 if (isFirstClick) {
                     placeMines(row, col);
                     isFirstClick = false;
                 }
 
-                const isFlagAction = (event.button === 2) || isFlagMode;
+                const isRightClick = event.button === 2;
+                const isLeftClick = event.button === 0;
                 
-                if (isFlagAction) {
+                const isFlagAction = isRightClick || isFlagMode;
+
+                // 1. Chording (자동 열기) Logic: 왼쪽 클릭이며, 이미 열린 숫자 칸일 때 실행 (깃발 모드와 관계 없음)
+                if (isLeftClick && cell.isRevealed && cell.mineCount > 0) {
+                    autoRevealNeighbors(row, col);
+                } 
+                // 2. Primary Action (Flag/Reveal) Logic
+                else if (isFlagAction) {
                     toggleFlag(row, col);
-                } else {
+                } else if (isLeftClick) {
+                    // 일반 Reveal (깃발이 꽂힌 셀은 건너뜀)
                     if (cell.isFlagged) {
                         return;
                     }
-                    
-                    // Chording (자동 열기) 기능 실행
-                    if (cell.isRevealed && cell.mineCount > 0) {
-                        autoRevealNeighbors(row, col);
-                    } else {
-                        revealCell(row, col);
-                    }
+                    revealCell(row, col);
                 }
 
                 drawBoard();
@@ -610,7 +628,7 @@
                 isFlagMode = !isFlagMode;
                 flagToggleButton.textContent = isFlagMode ? "❌ 깃발 모드 해제" : "🚩 일반 모드";
                 flagToggleButton.classList.toggle('active', isFlagMode);
-                updateMessage(); // 항상 남은 깃발 갯수를 표시
+                updateMessage();
             });
 
             // 새 게임 버튼
@@ -618,6 +636,40 @@
                 isFlagMode = false;
                 flagToggleButton.textContent = "🚩 일반 모드";
                 flagToggleButton.classList.remove('active');
+                startGame();
+            });
+            
+            // 칸 조절 버튼 (adjust-button)
+            adjustButton.addEventListener('click', () => {
+                // 현재 설정된 값으로 모달 초기화
+                inputRows.value = ROWS;
+                inputCols.value = COLS;
+                configError.classList.add('hidden');
+                configModal.classList.remove('hidden');
+            });
+            
+            // 칸 조절 모달 - 취소
+            cancelConfigButton.addEventListener('click', () => {
+                configModal.classList.add('hidden');
+            });
+            
+            // 칸 조절 모달 - 저장
+            saveConfigButton.addEventListener('click', () => {
+                configError.classList.add('hidden');
+                const newRows = parseInt(inputRows.value);
+                const newCols = parseInt(inputCols.value);
+                
+                // 유효성 검사 (5 <= x <= 50)
+                if (isNaN(newRows) || isNaN(newCols) || newRows < 5 || newCols < 5 || newRows > 50 || newCols > 50) {
+                    configError.classList.remove('hidden');
+                    return;
+                }
+                
+                ROWS = newRows;
+                COLS = newCols;
+                MINE_COUNT = Math.max(1, Math.floor(ROWS * COLS * MINE_PERCENTAGE)); // 지뢰 수 재계산 (최소 1개)
+                
+                configModal.classList.add('hidden');
                 startGame();
             });
 
@@ -643,30 +695,23 @@
                 const w_factor = Math.sqrt(3);
                 const h_step = 1.5;
 
-                // 1. 보드 크기의 단위 계산 (HEX_SIZE가 1이라고 가정)
                 const boardWidthUnits = w_factor * COLS + w_factor / 2;
                 const boardHeightUnits = h_step * (ROWS - 1) + 2; 
 
-                // 2. 캔버스가 들어갈 수 있는 최대 공간 (gameArea의 실제 크기)
                 const availableWidth = gameArea.clientWidth - MARGIN * 2;
                 const availableHeight = gameArea.clientHeight - MARGIN * 2;
                 
                 if (availableWidth <= 0 || availableHeight <= 0) return;
 
-                // 3. 가로/세로 비율 중 더 빡빡한 비율에 맞춰 HEX_SIZE 계산
                 const hexSizeFromWidth = availableWidth / boardWidthUnits;
                 const hexSizeFromHeight = availableHeight / boardHeightUnits;
                 
-                // 둘 중 작은 값을 선택하여 보드가 잘리지 않도록 함
                 const newHexSize = Math.floor(Math.min(hexSizeFromWidth, hexSizeFromHeight) * 100) / 100;
 
-                // 4. HEX_SIZE 업데이트 (최소 8px)
                 HEX_SIZE = Math.max(8, newHexSize);
                 
-                // 5. 캔버스 픽셀 크기 재설정
                 initializeCanvasDimensions();
                 
-                // 6. CSS 크기 조정 (game-area 중앙에 캔버스 배치)
                 canvas.style.width = `${canvas.width}px`;
                 canvas.style.height = `${canvas.height}px`; 
 
@@ -675,6 +720,8 @@
             
             // --- 시작 함수 ---
             const startGame = () => {
+                // MINE_COUNT를 현재 ROWS, COLS에 맞춰 업데이트
+                MINE_COUNT = Math.max(1, Math.floor(ROWS * COLS * MINE_PERCENTAGE));
                 createBoard();
                 resizeCanvas(); 
                 updateMessage();
