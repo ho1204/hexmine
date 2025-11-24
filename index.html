@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>육각형 지뢰찾기 (화면 최적화)</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        /* 사용자 정의 CSS: 게임의 시각적 요소를 강조하고 모바일 친화적으로 만듭니다. */
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            background-color: #1a202c; /* 다크 모드 배경 */
+            color: #e2e8f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* 최소 높이를 100vh로 설정하여 세로 화면을 모두 채우도록 함 */
+            min-height: 100vh; 
+            margin: 0;
+            padding: 10px; /* 전체 여백 최소화 */
+        }
+
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #2d3748;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.5), 0 4px 6px -2px rgba(0, 0, 0, 0.2);
+            padding: 1rem;
+            width: 100%; /* 모바일에서 최대한 넓게 사용 */
+            max-width: 800px; /* 데스크톱 최대 크기 제한 */
+            max-height: 98vh; /* 화면 높이 제한 */
+            overflow: hidden; /* 스크롤 방지 */
+        }
+        
+        #game-area {
+            width: 100%;
+            overflow: auto; /* 필요 시 스크롤 허용 (모바일 가로모드 대비) */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-grow: 1;
+            padding-bottom: 5px;
+        }
+
+        #controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            margin-bottom: 0.75rem;
+            padding: 0 0.25rem;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        #message-box {
+            background-color: #4a5568;
+            color: #edf2f7;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            font-size: 1rem;
+            text-align: center;
+            flex-grow: 1;
+            min-width: 100px;
+        }
+        
+        #game-canvas {
+            background-color: #1a202c; /* 보드 배경 */
+            border-radius: 0.5rem;
+            touch-action: none; 
+            cursor: pointer;
+            /* CSS 너비를 100%로 설정하고, JS에서 높이를 종횡비에 맞춰 조절 */
+            width: 100%; 
+            height: auto;
+        }
+
+        .btn-action {
+            padding: 0.75rem 1.5rem;
+            background-color: #48bb78; 
+            color: white;
+            border-radius: 0.75rem;
+            font-weight: bold;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        .btn-action:hover {
+            background-color: #38a169;
+        }
+        
+        .btn-action:active {
+            transform: scale(0.98);
+        }
+
+        /* 폰트 스타일: 지뢰 숫자에 사용 */
+        .mono-font {
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        .flag-toggle-btn {
+            background-color: #63b3ed;
+            color: white;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            transition: background-color 0.2s;
+            flex-grow: 1;
+        }
+        .flag-toggle-btn:hover {
+            background-color: #4299e1;
+        }
+        .flag-toggle-btn.active {
+            background-color: #e53e3e;
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <h1 class="text-2xl font-bold mb-3 text-white">Hex 지뢰찾기 (최적화)</h1>
+        
+        <div id="controls">
+            <div id="message-box" class="mono-font">지뢰 70개</div>
+            <button id="flag-toggle" class="flag-toggle-btn">
+                🚩 일반 모드
+            </button>
+        </div>
+        
+        <div id="game-area">
+            <canvas id="game-canvas"></canvas>
+        </div>
+
+        <button id="reset-button" class="btn-action w-full mt-3">
+            새 게임 시작
+        </button>
+        
+        <p class="text-xs text-gray-400 mt-2">
+            **모바일:** 일반 모드에서 터치하여 열기, 깃발 모드에서 터치하여 깃발 꽂기.
+        </p>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('game-canvas');
+            const ctx = canvas.getContext('2d');
+            const resetButton = document.getElementById('reset-button');
+            const messageBox = document.getElementById('message-box');
+            const flagToggleButton = document.getElementById('flag-toggle');
+            const gameContainer = document.getElementById('game-container');
+            const gameArea = document.getElementById('game-area');
+            
+            // --- 게임 설정 ---
+            const ROWS = 20; // 세로 20칸
+            const COLS = 24; // 가로 24칸
+            const MINE_COUNT = 70; 
+            const MARGIN = 10; // 캔버스 가장자리 여백
+            
+            // --- 동적 크기 변수 ---
+            let HEX_SIZE = 20; // 초기값 (resizeCanvas에서 동적으로 재계산됨)
+
+            // --- 게임 상태 ---
+            let board = [];
+            let isGameOver = false;
+            let isFirstClick = true;
+            let flagsRemaining = MINE_COUNT;
+            let isFlagMode = false; 
+            
+            // --- 색상 정의 ---
+            const COLORS = {
+                BACKGROUND: '#1a202c',
+                UNREVEALED: '#4a5568', 
+                REVEALED: '#2d3748', 
+                BORDER: '#1a202c', 
+                MINE: '#e53e3e', 
+                FLAG: '#63b3ed', 
+                TEXT: '#edf2f7',
+                NUMBERS: [
+                    'transparent', '#63b3ed', '#48bb78', '#fc8181', '#a3bffa', '#ecc94b', '#f6ad55', '#e53e3e', '#718096'
+                ]
+            };
+
+            // --- 헬퍼 함수 ---
+
+            // 1. 육각형 좌표 계산 (Pointy Top Hex)
+            const getHexagonPoints = (center_x, center_y, size) => {
+                const points = [];
+                for (let i = 0; i < 6; i++) {
+                    const angle_deg = 30 + 60 * i;
+                    const angle_rad = Math.PI / 180 * angle_deg;
+                    points.push({
+                        x: center_x + size * Math.cos(angle_rad),
+                        y: center_y + size * Math.sin(angle_rad)
+                    });
+                }
+                return points;
+            };
+
+            // 2. Grid (row, col)을 Pixel (x, y)로 변환
+            const hexToPixel = (row, col) => {
+                const w = Math.sqrt(3) * HEX_SIZE; 
+                const h = 2 * HEX_SIZE; 
+                
+                let x = w * (col + 0.5 * (row % 2));
+                let y = h * 0.75 * row;
+
+                return {
+                    x: x + w / 2 + MARGIN,
+                    y: y + HEX_SIZE + MARGIN 
+                };
+            };
+            
+            // 3. Pixel (x, y)를 Grid (row, col)로 변환
+            const pixelToHex = (px, py) => {
+                px -= MARGIN;
+                py -= MARGIN;
+                
+                const w = Math.sqrt(3) * HEX_SIZE;
+                const h = 2 * HEX_SIZE;
+                const h_step = h * 0.75; 
+
+                let r_approx = Math.round((py - HEX_SIZE) / h_step);
+                let x_adjusted = px - w / 2;
+                if (r_approx % 2 === 1) {
+                    x_adjusted -= w / 2;
+                }
+                let q_approx = Math.round(x_adjusted / w);
+                
+                let bestRow = -1, bestCol = -1;
+                let minDistance = Infinity;
+
+                for (let r = r_approx - 1; r <= r_approx + 1; r++) {
+                    for (let c = q_approx - 1; c <= q_approx + 1; c++) {
+                        if (r >= 0 && r < ROWS && c >= 0 && c < COLS) {
+                            const center = hexToPixel(r, c);
+                            const dx = (px + MARGIN) - center.x;
+                            const dy = (py + MARGIN) - center.y;
+                            const distance = Math.sqrt(dx * dx + dy * dy);
+
+                            if (distance < minDistance) {
+                                minDistance = distance;
+                                bestRow = r;
+                                bestCol = c;
+                            }
+                        }
+                    }
+                }
+                
+                if (minDistance <= HEX_SIZE * 0.95 && bestRow !== -1) {
+                    return { row: bestRow, col: bestCol };
+                }
+
+                return null;
+            };
+
+            // 4. 육각형 이웃 찾기 (Pointy Top, Row-Staggered Logic)
+            const getNeighbors = (r, c) => {
+                const neighbors = [];
+                const isOddRow = r % 2 !== 0; 
+
+                const offsets = [
+                    [0, -1], [0, 1], 
+                    [-1, 0], [1, 0],
+                ];
+
+                if (isOddRow) {
+                    offsets.push([-1, 1], [1, 1]); 
+                } else {
+                    offsets.push([-1, -1], [1, -1]); 
+                }
+
+                offsets.forEach(([dr, dc]) => {
+                    const nr = r + dr;
+                    const nc = c + dc;
+                    if (nr >= 0 && nr < ROWS && nc >= 0 && nc < COLS) {
+                        neighbors.push([nr, nc]);
+                    }
+                });
+                return neighbors;
+            };
+
+            // 5. 캔버스 픽셀 크기 설정 (현재 HEX_SIZE 기반)
+            const initializeCanvasDimensions = () => {
+                const w = Math.sqrt(3) * HEX_SIZE;
+                const h = 2 * HEX_SIZE;
+                
+                // 보드의 픽셀 너비/높이 계산
+                const max_x = w * COLS + w / 2;
+                const max_y = h * 0.75 * (ROWS - 1) + h;
+                
+                // 캔버스 크기 = 보드 크기 + 여백 * 2
+                canvas.width = max_x + MARGIN * 2;
+                canvas.height = max_y + MARGIN * 2;
+            };
+
+            // --- 게임 로직 (이전 요청과 동일하게 유지) ---
+
+            const createBoard = () => {
+                board = Array.from({ length: ROWS }, (_, r) =>
+                    Array.from({ length: COLS }, (_, c) => ({
+                        row: r,
+                        col: c,
+                        isMine: false,
+                        isRevealed: false,
+                        isFlagged: false,
+                        mineCount: 0,
+                    }))
+                );
+                flagsRemaining = MINE_COUNT;
+                updateMessage();
+                isGameOver = false;
+                isFirstClick = true;
+            };
+
+            const placeMines = (startRow, startCol) => {
+                let minesPlaced = 0;
+                while (minesPlaced < MINE_COUNT) {
+                    const r = Math.floor(Math.random() * ROWS);
+                    const c = Math.floor(Math.random() * COLS);
+
+                    const isStartCell = r === startRow && c === startCol;
+                    const isNeighbor = getNeighbors(startRow, startCol).some(([nr, nc]) => nr === r && nc === c);
+
+                    if (!board[r][c].isMine && !isStartCell && !isNeighbor) {
+                        board[r][c].isMine = true;
+                        minesPlaced++;
+                    }
+                }
+                calculateMineCounts();
+            };
+
+            const calculateMineCounts = () => {
+                for (let r = 0; r < ROWS; r++) {
+                    for (let c = 0; c < COLS; c++) {
+                        if (!board[r][c].isMine) {
+                            let count = 0;
+                            getNeighbors(r, c).forEach(([nr, nc]) => {
+                                if (board[nr]?.[nc]?.isMine) {
+                                    count++;
+                                }
+                            });
+                            board[r][c].mineCount = count;
+                        }
+                    }
+                }
+            };
+            
+            const revealCell = (r, c) => {
+                if (r < 0 || r >= ROWS || c < 0 || c >= COLS || board[r][c].isRevealed || board[r][c].isFlagged) {
+                    return;
+                }
+
+                const cell = board[r][c];
+                cell.isRevealed = true;
+
+                if (cell.isMine) {
+                    gameOver(false); 
+                    return;
+                }
+
+                if (cell.mineCount === 0) {
+                    getNeighbors(r, c).forEach(([nr, nc]) => {
+                        if (!board[nr][nc].isRevealed && !board[nr][nc].isFlagged) {
+                            if (board[nr][nc].mineCount === 0) {
+                                revealCell(nr, nc); 
+                            } else if (board[nr][nc].mineCount > 0) {
+                                board[nr][nc].isRevealed = true; 
+                            }
+                        }
+                    });
+                }
+                
+                checkWin();
+            };
+
+            const toggleFlag = (r, c) => {
+                const cell = board[r][c];
+                if (cell.isRevealed) return;
+
+                if (cell.isFlagged) {
+                    cell.isFlagged = false;
+                    flagsRemaining++;
+                } else if (flagsRemaining > 0) {
+                    cell.isFlagged = true;
+                    flagsRemaining--;
+                }
+                updateMessage();
+                checkWin();
+            };
+
+            const checkWin = () => {
+                let unrevealedCount = 0;
+                
+                board.forEach(row => {
+                    row.forEach(cell => {
+                        if (!cell.isRevealed) {
+                            unrevealedCount++;
+                        }
+                    });
+                });
+
+                if (unrevealedCount === MINE_COUNT && !isGameOver) {
+                     gameOver(true);
+                }
+            };
+            
+            const gameOver = (isWin) => {
+                isGameOver = true;
+                
+                if (isWin) {
+                    messageBox.textContent = "🥳 승리! 다시 하시겠어요?";
+                    messageBox.style.backgroundColor = '#48bb78'; 
+                    board.forEach(row => row.forEach(cell => {
+                        if (cell.isMine) cell.isFlagged = true;
+                    }));
+                } else {
+                    messageBox.textContent = "💥 게임 오버! 지뢰 폭발!";
+                    messageBox.style.backgroundColor = '#e53e3e'; 
+                    board.forEach(row => row.forEach(cell => {
+                        if (cell.isMine) cell.isRevealed = true;
+                    }));
+                }
+                drawBoard();
+            };
+
+            const updateMessage = () => {
+                if (!isGameOver) {
+                    messageBox.textContent = `🚩 ${flagsRemaining}개 남음`;
+                    messageBox.style.backgroundColor = '#4a5568';
+                }
+            };
+
+            // --- 렌더링 ---
+
+            // 1. 육각형 그리기 (경계선 포함)
+            const drawHexagon = (center_x, center_y, size, fill_color, border_color) => {
+                const points = getHexagonPoints(center_x, center_y, size);
+                
+                ctx.beginPath();
+                ctx.moveTo(points[0].x, points[0].y);
+                for (let i = 1; i < points.length; i++) {
+                    ctx.lineTo(points[i].x, points[i].y);
+                }
+                ctx.closePath();
+
+                ctx.fillStyle = fill_color;
+                ctx.fill();
+
+                ctx.strokeStyle = border_color; 
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            };
+
+            // 2. 보드 전체 그리기
+            const drawBoard = () => {
+                ctx.fillStyle = COLORS.BACKGROUND;
+                ctx.fillRect(0, 0, canvas.width, canvas.height); 
+
+                board.forEach(row => {
+                    row.forEach(cell => {
+                        const { x, y } = hexToPixel(cell.row, cell.col);
+                        
+                        let fillColor, contentColor, content = '';
+
+                        if (cell.isRevealed) {
+                            fillColor = COLORS.REVEALED;
+                            contentColor = COLORS.TEXT;
+
+                            if (cell.isMine) {
+                                fillColor = COLORS.MINE;
+                                content = '💣';
+                            } else if (cell.mineCount > 0) {
+                                content = cell.mineCount.toString();
+                                contentColor = COLORS.NUMBERS[cell.mineCount];
+                            } else {
+                                fillColor = COLORS.REVEALED;
+                            }
+                        } else {
+                            fillColor = COLORS.UNREVEALED;
+                            
+                            if (cell.isFlagged) {
+                                content = '🚩';
+                                contentColor = COLORS.FLAG;
+                            }
+                        }
+
+                        drawHexagon(x, y, HEX_SIZE, fillColor, COLORS.BORDER);
+                        
+                        if (content) {
+                            ctx.fillStyle = contentColor;
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'middle';
+                            
+                            if (content.match(/[\uD800-\uDBFF][\uDC00-\uDFFF]/)) {
+                                ctx.font = `bold ${HEX_SIZE * 0.9}px Noto Sans KR`;
+                                ctx.fillText(content, x, y + HEX_SIZE * 0.1); 
+                            } else {
+                                ctx.font = `bold ${HEX_SIZE * 1.1}px Roboto Mono`;
+                                ctx.fillText(content, x, y + HEX_SIZE * 0.1); 
+                            }
+                        }
+                    });
+                });
+            };
+
+            // --- 이벤트 핸들러 ---
+
+            const handleCanvasClick = (event) => {
+                if (event.type === 'contextmenu') {
+                    event.preventDefault();
+                    return;
+                }
+                
+                if (isGameOver) return;
+
+                const rect = canvas.getBoundingClientRect();
+                // 캔버스 픽셀 크기 / CSS 렌더링 크기로 스케일링 비율 계산
+                const scaleX = canvas.width / rect.width;
+                const scaleY = canvas.height / rect.height; 
+                const px = (event.clientX - rect.left) * scaleX;
+                const py = (event.clientY - rect.top) * scaleY;
+                
+                const hex = pixelToHex(px, py);
+                if (!hex) return;
+                
+                const { row, col } = hex;
+
+                if (isFirstClick) {
+                    placeMines(row, col);
+                    isFirstClick = false;
+                }
+
+                const isFlagAction = (event.button === 2) || isFlagMode;
+                
+                if (isFlagAction) {
+                    toggleFlag(row, col);
+                } else {
+                    if (board[row][col].isFlagged) {
+                        return;
+                    }
+                    revealCell(row, col);
+                }
+
+                drawBoard();
+            };
+            
+            flagToggleButton.addEventListener('click', () => {
+                isFlagMode = !isFlagMode;
+                flagToggleButton.textContent = isFlagMode ? "❌ 깃발 모드 해제" : "🚩 깃발 모드";
+                flagToggleButton.classList.toggle('active', isFlagMode);
+                if (isFlagMode) {
+                    messageBox.textContent = "깃발을 꽂을 셀을 터치하세요.";
+                } else {
+                    updateMessage();
+                }
+            });
+
+            resetButton.addEventListener('click', () => {
+                isFlagMode = false;
+                flagToggleButton.textContent = "🚩 일반 모드";
+                flagToggleButton.classList.remove('active');
+                startGame();
+            });
+
+            // 마우스 이벤트 (PC)
+            canvas.addEventListener('mousedown', handleCanvasClick);
+            canvas.addEventListener('contextmenu', handleCanvasClick); 
+
+            // 터치 이벤트 (모바일)
+            canvas.addEventListener('touchstart', (e) => {
+                e.preventDefault(); 
+                handleCanvasClick({
+                    clientX: e.touches[0].clientX,
+                    clientY: e.touches[0].clientY,
+                    target: e.target,
+                    preventDefault: () => e.preventDefault(),
+                    button: 0, 
+                    type: 'mousedown'
+                });
+            });
+
+            // 윈도우 리사이즈 처리 (반응형 캔버스)
+            const resizeCanvas = () => {
+                const w_factor = Math.sqrt(3);
+                const h_step = 1.5;
+
+                // 1. 보드 크기의 단위 계산 (HEX_SIZE가 1이라고 가정)
+                const boardWidthUnits = w_factor * COLS + w_factor / 2;
+                const boardHeightUnits = h_step * ROWS + 0.5;
+
+                // 2. 캔버스가 들어갈 수 있는 최대 공간 (컨트롤 영역 제외)
+                const availableWidth = gameArea.clientWidth - MARGIN * 2;
+                const availableHeight = gameArea.clientHeight - MARGIN * 2;
+                
+                if (availableWidth <= 0 || availableHeight <= 0) return;
+
+                // 3. 가로/세로 비율 중 더 빡빡한 비율에 맞춰 HEX_SIZE 계산
+                const hexSizeFromWidth = availableWidth / boardWidthUnits;
+                const hexSizeFromHeight = availableHeight / boardHeightUnits;
+                
+                // 둘 중 작은 값을 선택하여 보드가 잘리지 않도록 함
+                const newHexSize = Math.floor(Math.min(hexSizeFromWidth, hexSizeFromHeight));
+
+                // 4. HEX_SIZE 클램프 (최소 8px, 최대 30px)
+                HEX_SIZE = Math.max(8, Math.min(30, newHexSize));
+                
+                // 5. 캔버스 픽셀 크기 재설정
+                initializeCanvasDimensions();
+                
+                // 6. CSS 높이 조절 (width: 100%는 CSS가 처리하고, 높이는 픽셀 크기에 맞춰 조정)
+                // 캔버스의 고유한 종횡비를 유지하기 위해 CSS height를 조정
+                canvas.style.height = `${canvas.height}px`; 
+                
+                // 다시 그리기
+                drawBoard();
+            };
+            
+            // --- 시작 함수 ---
+            const startGame = () => {
+                createBoard();
+                // 캔버스 크기(HEX_SIZE)는 resizeCanvas에서 결정됩니다.
+                resizeCanvas(); 
+                updateMessage();
+            };
+
+            // 초기 시작 및 리사이즈 이벤트 연결
+            window.addEventListener('resize', resizeCanvas);
+            
+            // 게임 시작 (DOM이 로드된 후 resizeCanvas를 호출하여 초기 크기를 결정)
+            startGame();
+        });
+    </script>
+</body>
+</html>
