@@ -56,7 +56,7 @@
             width: 100%;
             margin-bottom: 0.75rem;
             padding: 0 0.25rem;
-            flex-wrap: wrap;
+            flex-wrap: nowrap; /* 버튼이 한 줄에 유지되도록 */
             gap: 0.5rem;
         }
 
@@ -68,8 +68,9 @@
             font-weight: bold;
             font-size: 1rem;
             text-align: center;
-            flex-grow: 1;
-            min-width: 100px;
+            /* 레이아웃 안정화: 약 50% 너비 고정 */
+            flex: 1 1 calc(50% - 4px); 
+            min-width: 0; 
         }
         
         #game-canvas {
@@ -110,7 +111,10 @@
             border-radius: 0.5rem;
             font-weight: bold;
             transition: background-color 0.2s;
-            flex-grow: 1;
+            /* 레이아웃 안정화: 약 50% 너비 고정 */
+            flex: 1 1 calc(50% - 4px);
+            min-width: 0;
+            text-wrap: nowrap; /* 텍스트가 줄바꿈되는 것을 방지 */
         }
         .flag-toggle-btn:hover {
             background-color: #4299e1;
@@ -157,7 +161,7 @@
             const ROWS = 18; // 세로 18칸
             const COLS = 14; // 가로 14칸
             const TOTAL_CELLS = ROWS * COLS; // 252
-            const MINE_COUNT = Math.floor(TOTAL_CELLS * 0.22); // 55
+            const MINE_COUNT = 55; // Math.floor(TOTAL_CELLS * 0.22); // 55
             const MARGIN = 4; 
             
             // --- 동적 크기 변수 ---
@@ -443,24 +447,41 @@
                 if (!cell.isRevealed || cell.mineCount === 0) return;
 
                 let flaggedCount = 0;
+                let hasMineFlaggedIncorrectly = false; // 잘못 꽂은 깃발 체크용
                 const neighbors = getNeighbors(r, c);
                 
-                // 인접 셀 중 깃발 갯수 카운트
+                // 인접 셀 중 깃발 갯수 카운트 및 잘못 꽂은 깃발 체크
                 neighbors.forEach(([nr, nc]) => {
-                    if (board[nr][nc].isFlagged) {
+                    const neighborCell = board[nr][nc];
+                    if (neighborCell.isFlagged) {
                         flaggedCount++;
+                        if (!neighborCell.isMine) {
+                            hasMineFlaggedIncorrectly = true;
+                        }
                     }
                 });
 
                 // 깃발 갯수가 셀의 지뢰 갯수와 일치하면 자동 열기 시작
                 if (flaggedCount === cell.mineCount) {
-                    neighbors.forEach(([nr, nc]) => {
-                        const neighborCell = board[nr][nc];
-                        // 깃발이 꽂히지 않았고, 아직 열리지 않은 셀만 revealCell 호출
-                        if (!neighborCell.isFlagged && !neighborCell.isRevealed) {
-                            revealCell(nr, nc); 
-                        }
-                    });
+                    if (hasMineFlaggedIncorrectly) {
+                        // 만약 깃발이 잘못 꽂혔다면, 자동 열기 시 지뢰가 터짐
+                        neighbors.forEach(([nr, nc]) => {
+                             const neighborCell = board[nr][nc];
+                             if (!neighborCell.isFlagged && !neighborCell.isRevealed) {
+                                 // revealCell이 지뢰를 발견하면 game over를 호출함
+                                 revealCell(nr, nc); 
+                             }
+                        });
+                    } else {
+                        // 깃발이 모두 올바르다면 안전하게 열기
+                        neighbors.forEach(([nr, nc]) => {
+                            const neighborCell = board[nr][nc];
+                            // 깃발이 꽂히지 않았고, 아직 열리지 않은 셀만 revealCell 호출
+                            if (!neighborCell.isFlagged && !neighborCell.isRevealed) {
+                                revealCell(nr, nc); 
+                            }
+                        });
+                    }
                 }
             };
 
@@ -573,7 +594,7 @@
                         return;
                     }
                     
-                    // 3. Chording (자동 열기) 기능 실행
+                    // Chording (자동 열기) 기능 실행
                     if (cell.isRevealed && cell.mineCount > 0) {
                         autoRevealNeighbors(row, col);
                     } else {
@@ -584,7 +605,7 @@
                 drawBoard();
             };
             
-            // 2. 깃발 모드 메시지 변경 요청 반영
+            // 깃발 모드 토글 버튼
             flagToggleButton.addEventListener('click', () => {
                 isFlagMode = !isFlagMode;
                 flagToggleButton.textContent = isFlagMode ? "❌ 깃발 모드 해제" : "🚩 일반 모드";
